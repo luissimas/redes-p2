@@ -56,8 +56,22 @@ class Servidor:
             if self.callback:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
+            conexao = self.conexoes[id_conexao]
+
+            if seq_no != conexao.ack_no:
+                return
+
+            conexao.ack_no = conexao.ack_no + len(payload)
+
+            header = fix_checksum(
+                make_header(dst_port, src_port, ack_no, conexao.ack_no, FLAGS_ACK),
+                dst_addr,
+                src_addr,
+            )
+            conexao.enviar((header, src_addr))
+
             # Passa para a conexão adequada se ela já estiver estabelecida
-            self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
+            conexao._rdt_rcv(seq_no, ack_no, flags, payload)
         else:
             print(
                 "%s:%d -> %s:%d (pacote associado a conexão desconhecida)"
@@ -86,15 +100,6 @@ class Conexao:
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
         print("recebido payload: %r" % payload)
-        print("Atual: ", self.seq_no, self.ack_no)
-        print("Recebido: ", seq_no, ack_no)
-
-        if seq_no != self.ack_no:
-            return
-
-        self.ack_no = self.ack_no + len(payload)
-
-        print("Post: ", self.seq_no, self.ack_no)
         self.callback(self, payload)
 
     # Os métodos abaixo fazem parte da API
