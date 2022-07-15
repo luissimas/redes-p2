@@ -52,7 +52,7 @@ class Servidor:
                 dst_addr,
                 src_addr,
             )
-            conexao.enviar((header, src_addr))
+            self.rede.enviar(header, src_addr)
             if self.callback:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
@@ -68,7 +68,7 @@ class Servidor:
                 dst_addr,
                 src_addr,
             )
-            conexao.enviar((header, src_addr))
+            self.rede.enviar(header, src_addr)
 
             # Passa para a conexão adequada se ela já estiver estabelecida
             conexao._rdt_rcv(seq_no, ack_no, flags, payload)
