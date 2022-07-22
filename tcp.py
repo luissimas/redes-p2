@@ -73,6 +73,7 @@ class Conexao:
         self.callback = None
         self.seq_no = seq_no
         self.ack_no = seq_no + 1
+        self.closed = False
         self.timer = asyncio.get_event_loop().call_later(
             1, self._exemplo_timer
         )  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
@@ -88,16 +89,27 @@ class Conexao:
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
         (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
 
+        if self.closed:
+            return
+
         if seq_no != self.ack_no:
             return
 
         self.ack_no += len(payload)
         self.seq_no = ack_no
 
-        print("Payload: ", payload)
+        if (flags & FLAGS_FIN) == FLAGS_FIN:
+            self.ack_no += 1
+            header = fix_checksum(
+                make_header(dst_port, src_port, self.seq_no, self.ack_no, FLAGS_ACK),
+                dst_addr,
+                src_addr,
+            )
+            self.servidor.rede.enviar(header, src_addr)
+            self.closed = True
+            self.callback(self, b"")
 
         if (len(payload) == 0) and ((flags & FLAGS_ACK) == FLAGS_ACK):
-            print("Só um ACK, abortando...")
             return
 
         header = fix_checksum(
@@ -105,10 +117,6 @@ class Conexao:
             dst_addr,
             src_addr,
         )
-
-        print("Enviando: ")
-        print("ack: ", self.ack_no)
-        print("seq: ", self.seq_no)
 
         self.servidor.rede.enviar(header, src_addr)
 
@@ -133,7 +141,6 @@ class Conexao:
         (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
         for i in range(math.ceil(len(dados) // MSS)):
             header = fix_checksum(
-                # make_header(src_port, dst_port, seq_no, ack_no, flags):
                 make_header(dst_port, src_port, self.seq_no, self.ack_no, FLAGS_ACK),
                 dst_addr,
                 src_addr,
@@ -149,4 +156,10 @@ class Conexao:
         Usado pela camada de aplicação para fechar a conexão
         """
         # TODO: implemente aqui o fechamento de conexão
-        pass
+        (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
+        header = fix_checksum(
+            make_header(dst_port, src_port, self.seq_no, self.ack_no, FLAGS_FIN),
+            dst_addr,
+            src_addr,
+        )
+        self.servidor.rede.enviar(header, src_addr)
