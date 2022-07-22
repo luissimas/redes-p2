@@ -1,4 +1,5 @@
 import asyncio
+import math
 from tcputils import *
 
 
@@ -56,22 +57,8 @@ class Servidor:
             if self.callback:
                 self.callback(conexao)
         elif id_conexao in self.conexoes:
-            conexao = self.conexoes[id_conexao]
-
-            if seq_no != conexao.ack_no:
-                return
-
-            conexao.ack_no = conexao.ack_no + len(payload)
-
-            header = fix_checksum(
-                make_header(dst_port, src_port, ack_no, conexao.ack_no, FLAGS_ACK),
-                dst_addr,
-                src_addr,
-            )
-            self.rede.enviar(header, src_addr)
-
             # Passa para a conexão adequada se ela já estiver estabelecida
-            conexao._rdt_rcv(seq_no, ack_no, flags, payload)
+            self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
         else:
             print(
                 "%s:%d -> %s:%d (pacote associado a conexão desconhecida)"
@@ -99,7 +86,32 @@ class Conexao:
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
-        print("recebido payload: %r" % payload)
+        (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
+
+        if seq_no != self.ack_no:
+            return
+
+        self.ack_no += len(payload)
+        self.seq_no = ack_no
+
+        print("Payload: ", payload)
+
+        if (len(payload) == 0) and ((flags & FLAGS_ACK) == FLAGS_ACK):
+            print("Só um ACK, abortando...")
+            return
+
+        header = fix_checksum(
+            make_header(dst_port, src_port, self.seq_no, self.ack_no, FLAGS_ACK),
+            dst_addr,
+            src_addr,
+        )
+
+        print("Enviando: ")
+        print("ack: ", self.ack_no)
+        print("seq: ", self.seq_no)
+
+        self.servidor.rede.enviar(header, src_addr)
+
         self.callback(self, payload)
 
     # Os métodos abaixo fazem parte da API
@@ -118,9 +130,19 @@ class Conexao:
         # TODO: implemente aqui o envio de dados.
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
         # que você construir para a camada de rede.
-        header, addr = dados
-        self.servidor.rede.enviar(header, addr)
-        pass
+        (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
+        for i in range(math.ceil(len(dados) // MSS)):
+            header = fix_checksum(
+                # make_header(src_port, dst_port, seq_no, ack_no, flags):
+                make_header(dst_port, src_port, self.seq_no, self.ack_no, FLAGS_ACK),
+                dst_addr,
+                src_addr,
+            )
+            payload = dados[i * MSS : (i + 1) * MSS]
+            self.seq_no += len(payload)
+
+            self.servidor.rede.enviar(header + payload, src_addr)
+        # self.servidor.rede.enviar(header + dados, src_addr)
 
     def fechar(self):
         """
