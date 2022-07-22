@@ -73,7 +73,6 @@ class Conexao:
         self.callback = None
         self.seq_no = seq_no
         self.ack_no = seq_no + 1
-        self.closed = False
         self.timer = asyncio.get_event_loop().call_later(
             1, self._exemplo_timer
         )  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
@@ -89,9 +88,6 @@ class Conexao:
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
         (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
 
-        if self.closed:
-            return
-
         if seq_no != self.ack_no:
             return
 
@@ -106,7 +102,8 @@ class Conexao:
                 src_addr,
             )
             self.servidor.rede.enviar(header, src_addr)
-            self.closed = True
+            print(self.servidor.conexoes)
+            del self.servidor.conexoes[self.id_conexao]
             self.callback(self, b"")
 
         if (len(payload) == 0) and ((flags & FLAGS_ACK) == FLAGS_ACK):
