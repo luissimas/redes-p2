@@ -72,7 +72,10 @@ class Conexao:
         self.id_conexao = id_conexao
         self.callback = None
         self.seq_no = seq_no
+        self.nex_seq_no = seq_no + 1
         self.ack_no = seq_no + 1
+        self.timer_rodando = False
+        self.nao_confirmados = b""
         self.timer = asyncio.get_event_loop().call_later(
             1, self._exemplo_timer
         )  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
@@ -92,12 +95,11 @@ class Conexao:
             return
 
         self.ack_no += len(payload)
-        self.seq_no = ack_no
 
         if (flags & FLAGS_FIN) == FLAGS_FIN:
             self.ack_no += 1
             header = fix_checksum(
-                make_header(dst_port, src_port, self.seq_no, self.ack_no, FLAGS_ACK),
+                make_header(dst_port, src_port, ack_no, self.ack_no, FLAGS_ACK),
                 dst_addr,
                 src_addr,
             )
@@ -107,8 +109,19 @@ class Conexao:
             self.callback(self, b"")
 
         if (len(payload) == 0) and ((flags & FLAGS_ACK) == FLAGS_ACK):
+            self.timer.cancel()
+            self.timer_rodando = False
+            self.nao_confirmados = self.nao_confirmados[ack_no - self.seq_no :]
+            self.seq_no = ack_no
+
+            if ack_no < self.nex_seq_no:
+                # ainda há pacotes a serem recebidos, start timer
+                self.timer_rodando = True
+                self.timer = asyncio.get_event_loop().call_later(1, self._handle_timer)
+
             return
 
+        self.seq_no = ack_no
         header = fix_checksum(
             make_header(dst_port, src_port, self.seq_no, self.ack_no, FLAGS_ACK),
             dst_addr,
@@ -138,15 +151,37 @@ class Conexao:
         (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
         for i in range(math.ceil(len(dados) // MSS)):
             header = fix_checksum(
-                make_header(dst_port, src_port, self.seq_no, self.ack_no, FLAGS_ACK),
+                make_header(
+                    dst_port, src_port, self.nex_seq_no, self.ack_no, FLAGS_ACK
+                ),
                 dst_addr,
                 src_addr,
             )
             payload = dados[i * MSS : (i + 1) * MSS]
-            self.seq_no += len(payload)
 
             self.servidor.rede.enviar(header + payload, src_addr)
-        # self.servidor.rede.enviar(header + dados, src_addr)
+            self.nex_seq_no += len(payload)
+            self.nao_confirmados += payload
+
+            # if timer not running, start timer
+            if not self.timer_rodando:
+                self.timer_rodando = True
+                self.timer = asyncio.get_event_loop().call_later(1, self._handle_timer)
+
+    def _handle_timer(self):
+        (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
+
+        header = fix_checksum(
+            make_header(dst_port, src_port, self.seq_no, self.ack_no, FLAGS_ACK),
+            dst_addr,
+            src_addr,
+        )
+
+        payload = self.nao_confirmados[:MSS]
+
+        self.servidor.rede.enviar(header + payload, src_addr)
+
+        self.timer = asyncio.get_event_loop().call_later(1, self._handle_timer)
 
     def fechar(self):
         """
