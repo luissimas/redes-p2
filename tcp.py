@@ -149,7 +149,7 @@ class Conexao:
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
         # que você construir para a camada de rede.
         (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
-        for i in range(math.ceil(len(dados) // MSS)):
+        for i in range(math.ceil(len(dados) / MSS)):
             header = fix_checksum(
                 make_header(
                     dst_port, src_port, self.nex_seq_no, self.ack_no, FLAGS_ACK
