@@ -150,16 +150,14 @@ class Conexao:
         # que você construir para a camada de rede.
         (src_addr, src_port, dst_addr, dst_port) = self.id_conexao
         for i in range(math.ceil(len(dados) / MSS)):
-            header = fix_checksum(
-                make_header(
-                    dst_port, src_port, self.nex_seq_no, self.ack_no, FLAGS_ACK
-                ),
-                dst_addr,
-                src_addr,
+            header = make_header(
+                dst_port, src_port, self.nex_seq_no, self.ack_no, FLAGS_ACK
             )
-            payload = dados[i * MSS : (i + 1) * MSS]
 
-            self.servidor.rede.enviar(header + payload, src_addr)
+            payload = dados[i * MSS : (i + 1) * MSS]
+            segment = fix_checksum(header + payload, dst_addr, src_addr)
+
+            self.servidor.rede.enviar(segment, src_addr)
             self.nex_seq_no += len(payload)
             self.nao_confirmados += payload
 
